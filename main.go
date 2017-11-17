@@ -9,18 +9,15 @@ import (
 )
 
 type Attempt struct {
-	timestamp time.Time
-	url       string
-	err       error
-	resp      *http.Response
-}
-
-func (a *Attempt) MarshalText() ([]byte, error) {
-	// TODO
-	return nil, nil
+	Timestamp  time.Time `json:"timestamp"`
+	URL        string    `json:"url"`
+	Err        string    `json:"error,omitempty"`
+	StatusCode int       `json:"statusCode,omitempty"`
 }
 
 func main() {
+	url := flag.String("url", "https://www.google.com", "url to test accessibility")
+	attemptInterval := flag.Duration("attempt-interval", 10*time.Minute, "duration between each attempt")
 	recycleInterval := flag.Duration("recycle-interval", 10*time.Minute, "duration between recycles")
 	keepDuration := flag.Duration("keep-duration", 24*time.Hour, "how long will attempts keep")
 	laddr := flag.String("laddr", ":7654", "address that http serve listen to")
@@ -28,7 +25,7 @@ func main() {
 
 	s := NewStore()
 
-	go keepAccessing(s, "https://www.google.com") // TODO
+	go keepAccessing(*url, *attemptInterval, s)
 
 	go func() {
 		for now := range time.Tick(*recycleInterval) {
@@ -37,7 +34,7 @@ func main() {
 
 			before := 0
 			for i, a := range items {
-				if a.(*Attempt).timestamp.After(t) {
+				if a.(*Attempt).Timestamp.After(t) {
 					break
 				}
 				before = i
@@ -62,21 +59,23 @@ func main() {
 	http.ListenAndServe(*laddr, nil)
 }
 
-func keepAccessing(s *Store, url string) {
+func keepAccessing(url string, wait time.Duration, s *Store) {
 	for {
-		resp, err := http.Get(url)
-		if err == nil {
-			resp.Body.Close()
+		a := &Attempt{
+			Timestamp: time.Now(),
+			URL:       url,
 		}
 
-		a := &Attempt{
-			timestamp: time.Now(),
-			url:       url,
-			err:       err,
-			resp:      resp,
+		resp, err := http.Get(url)
+		if err != nil {
+			a.Err = err.Error()
+		} else {
+			resp.Body.Close()
+			a.StatusCode = resp.StatusCode
 		}
+
 		s.Append(a)
 
-		time.Sleep(10 * time.Minute)
+		time.Sleep(wait)
 	}
 }
