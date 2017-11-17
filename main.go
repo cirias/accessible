@@ -5,18 +5,24 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
+	"strings"
+	"sync"
 	"time"
 )
 
 type Attempt struct {
-	Timestamp  time.Time `json:"timestamp"`
-	URL        string    `json:"url"`
-	Err        string    `json:"error,omitempty"`
-	StatusCode int       `json:"statusCode,omitempty"`
+	Timestamp time.Time       `json:"timestamp"`
+	Sites     []*Availability `json:"sites"`
+}
+
+type Availability struct {
+	URL        string `json:"url"`
+	Err        string `json:"error,omitempty"`
+	StatusCode int    `json:"statusCode,omitempty"`
 }
 
 func main() {
-	url := flag.String("url", "https://www.google.com", "url to test accessibility")
+	rawURLs := flag.String("urls", "https://www.google.com,https://www.baidu.com", "urls to test accessibility")
 	attemptInterval := flag.Duration("attempt-interval", 10*time.Minute, "duration between each attempt")
 	recycleInterval := flag.Duration("recycle-interval", 10*time.Minute, "duration between recycles")
 	keepDuration := flag.Duration("keep-duration", 24*time.Hour, "how long will attempts keep")
@@ -25,7 +31,9 @@ func main() {
 
 	s := NewStore()
 
-	go keepAccessing(*url, *attemptInterval, s)
+	urls := parseURLs(*rawURLs)
+
+	go keepAccessing(urls, *attemptInterval, s)
 
 	go func() {
 		for now := range time.Tick(*recycleInterval) {
@@ -46,9 +54,12 @@ func main() {
 
 	http.HandleFunc("/", func(w http.ResponseWriter, req *http.Request) {
 		items := s.Load()
+		length := len(items)
 		attempts := make([]*Attempt, len(items))
 		for i, item := range items {
-			attempts[i] = item.(*Attempt)
+			// return in reversed order
+			// recent one first
+			attempts[length-i-1] = item.(*Attempt)
 		}
 
 		enc := json.NewEncoder(w)
@@ -59,23 +70,56 @@ func main() {
 	http.ListenAndServe(*laddr, nil)
 }
 
-func keepAccessing(url string, wait time.Duration, s *Store) {
+func parseURLs(rawURLs string) []string {
+	urls := make([]string, 0)
+	for _, raw := range strings.Split(rawURLs, ",") {
+		trimed := strings.Trim(raw, " ")
+
+		if trimed != "" {
+			urls = append(urls, trimed)
+		}
+	}
+	return urls
+}
+
+func keepAccessing(urls []string, wait time.Duration, s *Store) {
+	var wg sync.WaitGroup
+
 	for {
-		a := &Attempt{
+		attempt := &Attempt{
 			Timestamp: time.Now(),
-			URL:       url,
+			Sites:     make([]*Availability, len(urls)),
 		}
 
-		resp, err := http.Get(url)
-		if err != nil {
-			a.Err = err.Error()
-		} else {
-			resp.Body.Close()
-			a.StatusCode = resp.StatusCode
-		}
+		wg.Add(len(urls))
+		for i, url := range urls {
+			go func(i int, url string) {
+				defer wg.Done()
 
-		s.Append(a)
+				a := access(url)
+				attempt.Sites[i] = a
+			}(i, url)
+		}
+		wg.Wait()
+
+		s.Append(attempt)
 
 		time.Sleep(wait)
 	}
+}
+
+func access(url string) *Availability {
+	a := &Availability{
+		URL: url,
+	}
+
+	resp, err := http.Get(url)
+	if err != nil {
+		a.Err = err.Error()
+	} else {
+		resp.Body.Close()
+		a.StatusCode = resp.StatusCode
+	}
+
+	return a
 }
