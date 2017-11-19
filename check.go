@@ -12,8 +12,8 @@ type Result struct {
 	StatusCode  int           `json:"statusCode,omitempty"`
 }
 
-func (r *Result) IsFailed() bool {
-	return r.StatusCode != http.StatusOK || r.ElapsedTime > 5*time.Second
+func (r *Result) Success() bool {
+	return r.StatusCode == http.StatusOK && r.ElapsedTime < 5*time.Second
 }
 
 func Check(url string) *Result {
