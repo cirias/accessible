@@ -4,23 +4,26 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/cirias/accessible"
 	botapi "github.com/go-telegram-bot-api/telegram-bot-api"
 )
 
 type SubState struct {
+	client    *accessible.Client
+	bot       *botapi.BotAPI
 	subConfig struct {
 		Name     string
 		URL      string
 		Duration time.Duration
 	}
-	newSub func(chatId int64, name, url string, d time.Duration) *Subscription
 	subs   map[string]*Subscription
 	update func(SubState, *botapi.Message) (SubState, botapi.Chattable)
 }
 
-func NewSubState(newSub func(chatId int64, name, url string, d time.Duration) *Subscription) SubState {
+func NewSubState(client *accessible.Client, bot *botapi.BotAPI) SubState {
 	return SubState{
-		newSub: newSub,
+		client: client,
+		bot:    bot,
 		subs:   make(map[string]*Subscription),
 		update: UpdateIdle,
 	}
@@ -47,12 +50,6 @@ func UpdateIdle(s SubState, msg *botapi.Message) (SubState, botapi.Chattable) {
 			sub.Close()
 		}
 		return s, botapi.NewMessage(msg.Chat.ID, "Removed")
-		/*
-		 * case "rm":
-		 *   return nil, nil
-		 * case "ls":
-		 *   return nil, nil
-		 */
 	}
 
 	return s, nil
@@ -63,12 +60,6 @@ func UpdateSubNew(s SubState, msg *botapi.Message) (SubState, botapi.Chattable) 
 		s.update = UpdateIdle
 		return s, botapi.NewMessage(msg.Chat.ID, "Canceled")
 	}
-
-	/*
-	 * if msg.IsCommand() {
-	 *   return s, botapi.NewMessage(msg.Chat.ID, "Invalid name")
-	 * }
-	 */
 
 	s.subConfig.Name = msg.Text // TODO validation
 	s.update = UpdateSubName
@@ -101,8 +92,8 @@ func UpdateSubURL(s SubState, msg *botapi.Message) (SubState, botapi.Chattable) 
 	name := s.subConfig.Name
 	url := s.subConfig.URL
 
-	sub := s.newSub(msg.Chat.ID, name, url, duration)
-	s.subs[s.subConfig.Name] = sub
+	sub := NewSubscription(s.client, s.bot, url, duration, msg.Chat.ID)
+	s.subs[name] = sub
 
 	s.update = UpdateIdle
 	return s, botapi.NewMessage(msg.Chat.ID, "Created")

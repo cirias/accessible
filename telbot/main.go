@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"crypto/tls"
 	"flag"
 	"fmt"
@@ -23,11 +22,6 @@ var (
 func main() {
 	flag.Parse()
 
-	bot, updates, err := NewBotAndFetch(*token)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 	}
@@ -39,45 +33,15 @@ func main() {
 		Httpc:      httpc,
 	}
 
-	newSub := func(chatId int64, name, url string, d time.Duration) *Subscription {
-		ctx, cancel := context.WithCancel(context.Background())
-		results := make(chan *accessible.Result)
-		go func() {
-			defer close(results)
-			if err := client.Poll(ctx, results, url, d); err != nil {
-				log.Println("could not poll: %s", err)
-			}
-		}()
-
-		store := NewRecycleStore(1*time.Minute, 100)
-		go func() {
-			for r := range results {
-				store.Append(r)
-
-				if r.Success() {
-					continue
-				}
-
-				msg := botapi.NewMessage(chatId, fmt.Sprint(*r))
-				if _, err := bot.Send(msg); err != nil {
-					log.Println("could not send: %s", err)
-				}
-			}
-		}()
-
-		return &Subscription{
-			cancel:   cancel,
-			url:      url,
-			duration: d,
-			history:  store,
-		}
+	bot, updates, err := NewBotAndFetch(*token)
+	if err != nil {
+		log.Fatalln(err)
 	}
 
-	newState := func() State {
-		return NewSubState(newSub)
-	}
+	initState := NewSubState(client, bot)
 
-	if err := Serve(bot, newState, updates); err != nil {
+	server := NewServer()
+	if err := server.Serve(bot, initState, updates); err != nil {
 		log.Fatalln(err)
 	}
 }
