@@ -16,6 +16,15 @@ type Client struct {
 	httpc      *http.Client
 }
 
+func NewClient(u, p, e string) *Client {
+	return &Client{
+		username:   u,
+		password:   p,
+		entrypoint: e,
+		httpc:      http.DefaultClient,
+	}
+}
+
 func (c *Client) Check(target string) (*Result, error) {
 	u := fmt.Sprintf("%s/check?url=%s", c.entrypoint, url.PathEscape(target))
 
