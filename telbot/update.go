@@ -6,7 +6,7 @@ type State interface {
 	Update(msg *botapi.Message) (State, botapi.Chattable)
 }
 
-var chats map[int64]State
+var chats map[int64]State = make(map[int64]State)
 
 func Serve(bot *botapi.BotAPI, newState func() State, updates <-chan botapi.Update) error {
 	// TODO handle updates in parallel

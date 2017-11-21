@@ -22,6 +22,7 @@ func NewSubState(newSub func(chatId int64, name, url string, d time.Duration) *S
 	return SubState{
 		newSub: newSub,
 		subs:   make(map[string]*Subscription),
+		update: UpdateIdle,
 	}
 }
 
@@ -32,7 +33,20 @@ func (s SubState) Update(msg *botapi.Message) (State, botapi.Chattable) {
 func UpdateIdle(s SubState, msg *botapi.Message) (SubState, botapi.Chattable) {
 	switch msg.Command() {
 	case "sub":
+		s.update = UpdateSubNew
 		return s, botapi.NewMessage(msg.Chat.ID, "Name?")
+	case "ls":
+		return s, botapi.NewMessage(msg.Chat.ID, fmt.Sprint(s.subs))
+	case "tail":
+		arg := msg.CommandArguments()
+		return s, botapi.NewMessage(msg.Chat.ID, fmt.Sprint(s.subs[arg].History()))
+	case "rm":
+		arg := msg.CommandArguments()
+		if sub, ok := s.subs[arg]; ok {
+			delete(s.subs, arg)
+			sub.Close()
+		}
+		return s, botapi.NewMessage(msg.Chat.ID, "Removed")
 		/*
 		 * case "rm":
 		 *   return nil, nil

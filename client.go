@@ -10,31 +10,22 @@ import (
 )
 
 type Client struct {
-	username   string
-	password   string
-	entrypoint string
-	httpc      *http.Client
-}
-
-func NewClient(u, p, e string) *Client {
-	return &Client{
-		username:   u,
-		password:   p,
-		entrypoint: e,
-		httpc:      http.DefaultClient,
-	}
+	Username   string
+	Password   string
+	Entrypoint string
+	Httpc      *http.Client
 }
 
 func (c *Client) Check(target string) (*Result, error) {
-	u := fmt.Sprintf("%s/check?url=%s", c.entrypoint, url.PathEscape(target))
+	u := fmt.Sprintf("%s/check?url=%s", c.Entrypoint, url.PathEscape(target))
 
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("could not new request: %s", err)
 	}
-	req.SetBasicAuth(c.username, c.password)
+	req.SetBasicAuth(c.Username, c.Password)
 
-	resp, err := c.httpc.Do(req)
+	resp, err := c.Httpc.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("could not get: %s", err)
 	}

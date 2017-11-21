@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"log"
 	"net/http"
 
 	"github.com/cirias/accessible"
@@ -20,5 +21,7 @@ func main() {
 
 	handler := accessible.BasicAuthHandler(*username, *password, accessible.CheckHandler)
 	http.Handle("/check", handler)
-	http.ListenAndServeTLS(*laddr, *cert, *key, nil)
+	if err := http.ListenAndServeTLS(*laddr, *cert, *key, nil); err != nil {
+		log.Fatalln(err)
+	}
 }

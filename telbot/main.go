@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"time"
 
 	"github.com/cirias/accessible"
@@ -26,14 +28,25 @@ func main() {
 		log.Fatalln(err)
 	}
 
-	client := accessible.NewClient(*username, *password, *entrypoint)
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+	}
+	httpc := &http.Client{Transport: tr}
+	client := &accessible.Client{
+		Username:   *username,
+		Password:   *password,
+		Entrypoint: *entrypoint,
+		Httpc:      httpc,
+	}
 
 	newSub := func(chatId int64, name, url string, d time.Duration) *Subscription {
 		ctx, cancel := context.WithCancel(context.Background())
 		results := make(chan *accessible.Result)
 		go func() {
 			defer close(results)
-			client.Poll(ctx, results, url, d)
+			if err := client.Poll(ctx, results, url, d); err != nil {
+				log.Println("could not poll: %s", err)
+			}
 		}()
 
 		store := NewRecycleStore(1*time.Minute, 100)
@@ -45,7 +58,7 @@ func main() {
 					continue
 				}
 
-				msg := botapi.NewMessage(chatId, fmt.Sprint(r))
+				msg := botapi.NewMessage(chatId, fmt.Sprint(*r))
 				if _, err := bot.Send(msg); err != nil {
 					log.Println("could not send: %s", err)
 				}
