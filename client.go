@@ -41,17 +41,17 @@ func (c *Client) Check(target string) (*Result, error) {
 	return &r, nil
 }
 
-func (c *Client) Poll(ctx context.Context, out chan<- *Result, url string, interval time.Duration) error {
+func (c *Client) Poll(ctx context.Context, h func(*Result, error) error, url string, interval time.Duration) error {
 	for {
-		r, err := c.Check(url)
+		err := h(c.Check(url))
 		if err != nil {
-			return fmt.Errorf("could not check: %s", err)
+			return fmt.Errorf("could not handle: %s", err)
 		}
 
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case out <- r:
+		default:
 		}
 
 		time.Sleep(interval)
