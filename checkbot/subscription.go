@@ -10,6 +10,34 @@ import (
 	"github.com/cirias/accessible"
 )
 
+type SubcribeParams struct {
+	Name     string
+	URL      string
+	Duration time.Duration
+}
+
+func (p SubcribeParams) String() string {
+	return fmt.Sprintf("%s %s %v", p.Name, p.URL, p.Duration)
+}
+
+type Subscription struct {
+	cancel  func()
+	params  SubcribeParams
+	history *ResultStore
+}
+
+func (s *Subscription) String() string {
+	return fmt.Sprint(s.params)
+}
+
+func (s *Subscription) History() *ResultStore {
+	return s.history
+}
+
+func (s *Subscription) Close() {
+	s.cancel()
+}
+
 type Subscriber struct {
 	client *accessible.Client
 	subs   *sync.Map
@@ -22,12 +50,8 @@ func NewSubscriber(client *accessible.Client) *Subscriber {
 	}
 }
 
-func (s *Subscriber) Subscriptions() *sync.Map {
-	return s.subs
-}
-
-func (s *Subscriber) Subscribe(name, url string, d time.Duration, handleAnomaly func(*accessible.Result, error) error) {
-	store := NewRecycleStore(1*time.Minute, 100)
+func (s *Subscriber) Subscribe(p SubcribeParams, handleAnomaly func(*accessible.Result, error) error) {
+	store := NewResultStore(100)
 	ctx, cancel := context.WithCancel(context.Background())
 	go func() {
 		handle := func(r *accessible.Result, err error) error {
@@ -43,18 +67,17 @@ func (s *Subscriber) Subscribe(name, url string, d time.Duration, handleAnomaly 
 
 			return handleAnomaly(r, nil)
 		}
-		if err := client.Poll(ctx, handle, url, d); err != nil {
+		if err := s.client.Poll(ctx, handle, p.URL, p.Duration); err != nil {
 			log.Println("could not poll: %s", err)
 		}
 	}()
 
 	sub := &Subscription{
-		cancel:   cancel,
-		url:      url,
-		duration: d,
-		history:  store,
+		cancel:  cancel,
+		params:  p,
+		history: store,
 	}
-	s.subs.Store(name, sub)
+	s.subs.Store(p.Name, sub)
 }
 
 func (s *Subscriber) Unsubscribe(name string) error {
@@ -67,20 +90,4 @@ func (s *Subscriber) Unsubscribe(name string) error {
 	sub.(*Subscription).Close()
 
 	return nil
-}
-
-type Subscription struct {
-	cancel   func()
-	url      string
-	duration time.Duration
-	history  *RecycleStore
-}
-
-func (s *Subscription) History() []*accessible.Result {
-	return s.history.Load()
-}
-
-func (s *Subscription) Close() {
-	s.cancel()
-	s.history.Close()
 }

@@ -19,6 +19,7 @@ type Bot struct {
 func NewBot(token string) *Bot {
 	return &Bot{
 		token: token,
+		Httpc: http.DefaultClient,
 	}
 }
 
@@ -37,14 +38,21 @@ type Message struct {
 	Entities []*MessageEnitity `json:"entities"`
 }
 
-func (m *Message) Command() string {
-	// TODO
-	return ""
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
-func (m *Message) CommandArguments() string {
-	// TODO
-	return ""
+func (m *Message) Command() (string, string) {
+	for _, entry := range m.Entities {
+		if entry.Type == "bot_command" {
+			start := min(entry.Offset+entry.Length+1, len(m.Text))
+			return m.Text[entry.Offset : entry.Offset+entry.Length], m.Text[start:len(m.Text)]
+		}
+	}
+	return "", ""
 }
 
 type Chat struct {
@@ -74,7 +82,7 @@ type GetUpdatesParams struct {
 type MessageParams struct {
 	ChatId      ChatId                `json:"chat_id"`
 	Text        string                `json:"text"`
-	ReplyMarkup *InlineKeyboardMarkup `json:"reply_markup"`
+	ReplyMarkup *InlineKeyboardMarkup `json:"reply_markup,omitempty"`
 }
 
 type InlineKeyboardMarkup struct {
@@ -93,9 +101,7 @@ type ResponseBody struct {
 	Description string          `json:"description"`
 }
 
-func (b *Bot) GetUpdates(params *GetUpdatesParams) ([]*Update, error) {
-	u := fmt.Sprintf(urlPattern, b.token, "getUpdates")
-
+func (b *Bot) request(u string, params interface{}) (json.RawMessage, error) {
 	var buf bytes.Buffer
 
 	enc := json.NewEncoder(&buf)
@@ -107,6 +113,7 @@ func (b *Bot) GetUpdates(params *GetUpdatesParams) ([]*Update, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not new request: %s", err)
 	}
+	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := b.Httpc.Do(req)
 	if err != nil {
@@ -121,11 +128,22 @@ func (b *Bot) GetUpdates(params *GetUpdatesParams) ([]*Update, error) {
 	}
 
 	if !rb.Ok {
-		return nil, fmt.Errorf("could not get updates: %s", rb.Description)
+		return nil, fmt.Errorf("could not get result: %s", rb.Description)
+	}
+
+	return rb.Result, nil
+}
+
+func (b *Bot) GetUpdates(params *GetUpdatesParams) ([]*Update, error) {
+	u := fmt.Sprintf(urlPattern, b.token, "getUpdates")
+
+	result, err := b.request(u, params)
+	if err != nil {
+		return nil, err
 	}
 
 	var updates []*Update
-	if err := json.Unmarshal(rb.Result, updates); err != nil {
+	if err := json.Unmarshal(result, &updates); err != nil {
 		return nil, fmt.Errorf("could not unmarshal updates: %s", err)
 	}
 
@@ -135,40 +153,15 @@ func (b *Bot) GetUpdates(params *GetUpdatesParams) ([]*Update, error) {
 func (b *Bot) SendMessage(params *MessageParams) (*Message, error) {
 	u := fmt.Sprintf(urlPattern, b.token, "sendMessage")
 
-	var buf bytes.Buffer
-
-	enc := json.NewEncoder(&buf)
-	if err := enc.Encode(params); err != nil {
-		return nil, fmt.Errorf("could not encode params: %s", err)
-	}
-
-	req, err := http.NewRequest("GET", u, &buf)
+	result, err := b.request(u, params)
 	if err != nil {
-		return nil, fmt.Errorf("could not new request: %s", err)
-	}
-
-	resp, err := b.Httpc.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("could not do request: %s", err)
-	}
-	defer resp.Body.Close()
-
-	dec := json.NewDecoder(resp.Body)
-	var rb ResponseBody
-	if err := dec.Decode(&rb); err != nil {
-		return nil, fmt.Errorf("could not decode response: %s", err)
-	}
-
-	if !rb.Ok {
-		return nil, fmt.Errorf("could not send message: %s", rb.Description)
+		return nil, err
 	}
 
 	var msg Message
-	if err := json.Unmarshal(rb.Result, msg); err != nil {
+	if err := json.Unmarshal(result, &msg); err != nil {
 		return nil, fmt.Errorf("could not unmarshal message: %s", err)
 	}
 
 	return &msg, nil
 }
-
-type SendMessageFunc = func(*MessageParams) (*Message, error)

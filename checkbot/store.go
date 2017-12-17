@@ -2,68 +2,44 @@ package main
 
 import (
 	"sync"
-	"time"
 
 	"github.com/cirias/accessible"
 )
 
-type Store struct {
-	// I want to make Store a interface
-	// but I can't due to []*Result is not []interface{}
+type ResultStore struct {
 	mutex sync.RWMutex
 	items []*accessible.Result
+	start int
+	len   int
 }
 
-func NewStore() *Store {
-	return &Store{
-		items: make([]*accessible.Result, 0),
+func NewResultStore(size int) *ResultStore {
+	return &ResultStore{
+		items: make([]*accessible.Result, size),
 	}
 }
 
-func (s *Store) Append(item *accessible.Result) {
+func (s *ResultStore) Append(item *accessible.Result) {
 	s.mutex.Lock()
-	s.items = append(s.items, item)
-	s.mutex.Unlock()
+	defer s.mutex.Unlock()
+
+	s.items[(s.start+s.len)%len(s.items)] = item
+	if s.len < len(s.items) {
+		s.len += 1
+	} else {
+		s.start += 1
+		s.start %= len(s.items)
+	}
 }
 
-func (s *Store) Load() []*accessible.Result {
+func (s *ResultStore) Range(f func(*accessible.Result) bool) {
 	s.mutex.RLock()
-	items := s.items[:]
-	s.mutex.RUnlock()
-	return items
-}
+	defer s.mutex.RUnlock()
 
-func (s *Store) Drop(before int) {
-	s.mutex.Lock()
-	s.items = s.items[before:]
-	s.mutex.Unlock()
-}
-
-type RecycleStore struct {
-	*Store
-	t *time.Ticker
-}
-
-func NewRecycleStore(d time.Duration, max int) *RecycleStore {
-	s := NewStore()
-	t := time.NewTicker(d)
-
-	go func() {
-		for range t.C {
-			items := s.Load()
-
-			if len(items) <= max {
-				continue
-			}
-
-			before := len(items) - max
-			s.Drop(before)
+	for i := s.start; i < s.len; i++ {
+		item := s.items[(s.start+i)%len(s.items)]
+		if !f(item) {
+			return
 		}
-	}()
-
-	return &RecycleStore{s, t}
-}
-
-func (s *RecycleStore) Close() {
-	s.t.Stop()
+	}
 }

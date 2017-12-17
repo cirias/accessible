@@ -8,10 +8,8 @@ import (
 	"github.com/cirias/accessible/telbot"
 )
 
-type HandleFunc func(telbot.SendMessageFunc, *telbot.Update)
-
 type Handler interface {
-	Handle(telbot.SendMessageFunc, *telbot.Update)
+	Handle(*telbot.Bot, *telbot.Update)
 }
 
 type Server struct {
@@ -37,7 +35,7 @@ func (s *Server) Serve(bot *telbot.Bot) error {
 		}
 
 		for _, u := range updates {
-			go s.h.Handle(bot.SendMessage, u)
+			go s.h.Handle(bot, u)
 		}
 
 		if len(updates) > 0 {
@@ -58,13 +56,13 @@ func NewChatHandler(client *accessible.Client) *ChatHandler {
 	}
 }
 
-func (h *ChatHandler) Handle(s telbot.SendMessageFunc, u *telbot.Update) {
+func (h *ChatHandler) Handle(bot *telbot.Bot, u *telbot.Update) {
 	chatId := u.Message.Chat.Id
 	v, ok := h.chats.Load(chatId)
 	if !ok {
-		v = NewChat(h.client)
+		v = NewChat(chatId, h.client)
 		h.chats.Store(chatId, v)
 	}
 
-	go v.(Handler).Handle(s, u)
+	go v.(Handler).Handle(bot, u)
 }
