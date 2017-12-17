@@ -25,9 +25,12 @@ func NewServer(h Handler) *Server {
 }
 
 func (s *Server) Serve(bot *telbot.Bot) error {
-	params := &telbot.UpdatesParams{}
+	params := &telbot.GetUpdatesParams{
+		Offset:  0,
+		Limit:   100,
+		Timeout: 10,
+	}
 	for {
-		// TODO offset
 		updates, err := bot.GetUpdates(params)
 		if err != nil {
 			return fmt.Errorf("could not get updates: %s", err)
@@ -35,6 +38,10 @@ func (s *Server) Serve(bot *telbot.Bot) error {
 
 		for _, u := range updates {
 			go s.h.Handle(bot.SendMessage, u)
+		}
+
+		if len(updates) > 0 {
+			params.Offset = updates[len(updates)-1].Id + 1
 		}
 	}
 }
